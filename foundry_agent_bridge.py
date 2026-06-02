@@ -1,6 +1,6 @@
 import os
 import traceback
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential
