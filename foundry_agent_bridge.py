@@ -12,7 +12,6 @@ load_dotenv()
 def get_agent_client(
     project_endpoint: Optional[str] = None,
     agent_name: Optional[str] = None,
-    allow_preview: bool = True,
 ):
     """Return an OpenAI-compatible client pointed at a deployed Foundry agent."""
     # Explicitly load environment variables
@@ -24,17 +23,13 @@ def get_agent_client(
     if not resolved_endpoint:
         raise RuntimeError("AZURE_AI_PROJECT_ENDPOINT is missing in your .env file.")
 
-    # Initialize the client
-    # Note: Ensure your environment uses azure-ai-projects>=2.1.0 as per your requirements.txt 
+    # Initialize the client without the 'allow_preview' argument
     project_client = AIProjectClient(
         endpoint=resolved_endpoint,
         credential=DefaultAzureCredential(),
     )
     
     return project_client, resolved_agent_name
-
-    print(f"[DEBUG] Requesting OpenAI-compatible client for agent: {resolved_agent_name}")
-    return project_client.get_openai_client(agent_name=resolved_agent_name)
 
 
 def build_messages(
