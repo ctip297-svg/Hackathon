@@ -15,23 +15,23 @@ def get_agent_client(
     allow_preview: bool = True,
 ):
     """Return an OpenAI-compatible client pointed at a deployed Foundry agent."""
+    # Explicitly load environment variables
+    load_dotenv()
+    
     resolved_endpoint = project_endpoint or os.getenv("AZURE_AI_PROJECT_ENDPOINT")
-    resolved_agent_name = agent_name or os.getenv("FOUNDRY_AGENT_NAME", "imac-agent-new")
-
-    print(f"[DEBUG] Foundry agent setup: endpoint={'set' if resolved_endpoint else 'unset'}, agent_name={resolved_agent_name}")
+    resolved_agent_name = agent_name or os.getenv("FOUNDRY_AGENT_NAME", "IMAC_Immunisation_Advisor")
 
     if not resolved_endpoint:
-        print("[DEBUG] Missing AZURE_AI_PROJECT_ENDPOINT environment variable")
-        raise RuntimeError(
-            "AZURE_AI_PROJECT_ENDPOINT is required. It should point to your Azure AI Project endpoint."
-        )
+        raise RuntimeError("AZURE_AI_PROJECT_ENDPOINT is missing in your .env file.")
 
-    print(f"[DEBUG] Creating AIProjectClient with endpoint: {resolved_endpoint}")
+    # Initialize the client
+    # Note: Ensure your environment uses azure-ai-projects>=2.1.0 as per your requirements.txt 
     project_client = AIProjectClient(
         endpoint=resolved_endpoint,
         credential=DefaultAzureCredential(),
-        allow_preview=allow_preview,
     )
+    
+    return project_client, resolved_agent_name
 
     print(f"[DEBUG] Requesting OpenAI-compatible client for agent: {resolved_agent_name}")
     return project_client.get_openai_client(agent_name=resolved_agent_name)
