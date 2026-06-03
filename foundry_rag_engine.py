@@ -796,6 +796,43 @@ def trim_context_chunks(retrieved_chunks: List[str], max_chunks: int = MAX_CONTE
 
     return trimmed_chunks
 
+
+def generate_response(user_prompt, conversation_history=None):
+    user_prompt = user_prompt.strip()
+    if not user_prompt:
+        return "Security Alert: Empty query received. Please provide a valid clinical question.", []
+
+    if len(user_prompt) > MAX_USER_PROMPT_LENGTH:
+        return f"Security Alert: Query exceeds maximum allowed length ({MAX_USER_PROMPT_LENGTH} characters).", []
+
+    if not foundry_client:
+        return get_mock_response(user_prompt)
+
+    conversation_history = conversation_history or []
+    history_messages = []
+    for message in conversation_history[-MAX_CONVERSATION_TURNS:]:
+        role = message.get("role")
+        content = message.get("content")
+        if role not in {"user", "assistant"} or not isinstance(content, str):
+            continue
+        stripped_content = content.strip()
+        if stripped_content:
+            history_messages.append({"role": role, "content": stripped_content})
+
+    system_message = {
+        "role": "system",
+        "content": (
+            "You are an IMAC immunisation advisor. Use the earlier turns in the conversation to preserve context, "
+            "resolve follow-up references, and connect the current answer to prior discussion."
+        ),
+    }
+
+    def build_chat_messages(prompt_body: str) -> List[Dict[str, str]]:
+        messages = [system_message]
+        messages.extend(history_messages)
+        messages.append({"role": "user", "content": prompt_body})
+        return messages
+
     def _extract_response_text(api_response: dict) -> str:
         def _extract_from_content(content):
             texts = []
@@ -895,6 +932,60 @@ def trim_context_chunks(retrieved_chunks: List[str], max_chunks: int = MAX_CONTE
             )
 
         return response
+
+    def condense_query(prompt: str, history: list) -> str:
+        if not history:
+            return prompt
+        condensation_prompt = (
+            "Given the following conversation history and the user's follow-up question, "
+            "rephrase the follow-up question to be a standalone query that can be used "
+            "to search a medical database. Do not answer it, just rephrase it.\n\n"
+            f"Chat History:\n{history}\n\n"
+            f"Follow-up Question: {prompt}"
+        )
+        try:
+            response = _call_foundry([{"role": "user", "content": condensation_prompt}], 100)
+            return _extract_response_text(response)
+        except Exception:
+            return prompt
+
+    retrieved_chunks: List[str] = []
+    citations: List[str] = []
+
+    if ensure_vector_index(VECTOR_STORE_DIR, VECTOR_COLLECTION_NAME):
+        try:
+            # --- STEP A: RETRIEVAL ---
+            # 1. Rewrite the query so the database can understand pronouns and context
+            search_query = condense_query(user_prompt, history_messages)
+            
+            _debug_log(f"Searching vector store for condensed query: {search_query}")
+            
+            # 2. Query the vector store with the CONTEXTUALIZED search query
+            retrieved_chunks, citations = query_vector_store(search_query, VECTOR_COLLECTION_NAME, VECTOR_STORE_DIR)
+            
+            if not retrieved_chunks:
+                return (
+                    "System Error: No relevant guidance was retrieved from the vector store. "
+                    "Please verify the vector index has been created and that the Foundry embedding model is supported.",
+                    []
+                )
+        except Exception as e:
+            return (f"System Error: Vector store retrieval failed: {e}", [])
+    else:
+        return (
+            "System Error: The vector index is missing or could not be created. Please run ingestion again.",
+            []
+        )
+
+    retrieved_chunks = trim_context_chunks(retrieved_chunks)
+    context = "\n\n".join(retrieved_chunks)
+
+    prompt_text = (
+        "Answer using only the context below. Keep the answer concise and directly relevant. "
+        "If the answer cannot be found in the context, reply exactly: I couldn't find a clear answer in approved guidance.\n\n"
+        f"Context:\n{context}\n\n"
+        f"Question:\n{user_prompt}"
+    )
 
     try:
         response = _call_foundry(build_chat_messages(prompt_text), MAX_FOUNDARY_OUTPUT_TOKENS)
