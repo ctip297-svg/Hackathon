@@ -29,7 +29,8 @@ def get_agent_client(
         credential=DefaultAzureCredential(),
     )
     
-    return project_client, resolved_agent_name
+    print(f"[DEBUG] Requesting OpenAI-compatible client for agent: {resolved_agent_name}")
+    return project_client.get_openai_client(agent_name=resolved_agent_name)
 
 
 def build_messages(
